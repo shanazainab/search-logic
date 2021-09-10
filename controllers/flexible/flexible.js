@@ -72,7 +72,6 @@ exports.getSearchResultsForFlexible = (req, res) => {
   }
 
   console.log("chosenflexible", chosenFlexibleDays);
- 
 
   let building;
   Building.findAll({
@@ -133,8 +132,15 @@ exports.getSearchResultsForFlexible = (req, res) => {
           const availProperty = JSON.parse(JSON.stringify(property));
           //todo:if weekend, add weekend
           if (flexible.type === "weekend") {
-            var weekend = new Date(startDay.setDate(startDay.getDate() + ));
-            availProperty.reservations.check_in = weekend
+            let displacement;
+            if (city === "Dubai") displacement = 4;
+            else displacement = 5;
+            var weekend = new Date(
+              startDay.setDate(
+                startDay.getDate() + (displacement - (startDay.getDay() === 5? -2: startDay.getDay() ===6 ? -1:startDay.getDay()))
+              )
+            );
+            availProperty.reservations.check_in = weekend;
           } else availProperty.reservations.check_in = startDay;
           availableProperties.push(availProperty);
         }
