@@ -56,7 +56,7 @@ exports.getSearchResultsForDates = (req, res) => {
                 },
                 {
                   checkOut: {
-                    [Op.between]: [date.start, date.end],
+                    [Op.gt]: date.start,
                   },
                 },
               ],
@@ -82,6 +82,7 @@ exports.getSearchResultsForDates = (req, res) => {
         const conflictReservationProperties = properties.filter(
           (p) => p.reservations.checkIn !== null
         );
+        
         console.log("conflict\n", conflictReservationProperties);
 
         const reservedProperyIDs = conflictReservationProperties.map(
@@ -107,39 +108,45 @@ exports.getSearchResultsForDates = (req, res) => {
           if (!apartmentType && !amenitiesFilter) {
             const ids = availableProperties.map((e) => e.id);
             match.push(...ids);
-          }
-          /// match property with apartment type
-          if (apartmentType) {
+          } else {
+            /// match property with apartment type and property type
             for (const property of availableProperties) {
-              if (property.property_type === apartmentType) {
-                var index = match.findIndex((x) => x == property.id);
-                if (index === -1) match.push(property.id);
+              let matched = false;
+              if (apartmentType && amenitiesFilter) {
+                if (
+                  property.property_type === apartmentType &&
+                  findCommonAmenities(property.amenities, amenitiesFilter)
+                ) {
+                  matched = true;
+                }
+              } else if (apartmentType) {
+                if (property.property_type === apartmentType) matched = true;
+              } else if (amenitiesFilter) {
+                console.log("go tot" , property.amenities,amenitiesFilter)
+                if (findCommonAmenities(property.amenities, amenitiesFilter)) {
+
+                  matched = true;
+                  console.log("go tot" , matched)
+
+                }
+              }
+
+              if (matched) {
+                console.log("go tot" , matched)
+                if (match.findIndex((x) => x == property.id) === -1)
+                  match.push(property.id);
               }
             }
             if (match.isEmpty || match.length < 5) {
               for (const property of availableProperties) {
-                if (property.property_type !== apartmentType)
+                if (apartmentType && property.property_type !== apartmentType)
                   if (other.findIndex((x) => x.id == property.id) === -1)
                     other.push({
                       id: property.id,
                       availableStarting: date.start,
                     });
-              }
-            }
-          }
 
-          ///match proprty with amenities
-          if (amenitiesFilter) {
-            for (const property of availableProperties) {
-              if (findCommonAmenities(property.amenities, amenitiesFilter)) {
-                if (match.findIndex((x) => x == property.id) === -1)
-                  match.push(property.id);
-              }
-            }
-
-            if (match.isEmpty || match.length < 5) {
-              for (const property of availableProperties) {
-                if (!findCommonAmenities(property.amenities, amenitiesFilter))
+                if (amenitiesFilter && !findCommonAmenities(property.amenities, amenitiesFilter))
                   if (other.findIndex((x) => x.id == property.id) === -1)
                     other.push({
                       id: property.id,
@@ -180,7 +187,6 @@ exports.getSearchResultsForDates = (req, res) => {
       ///check for possible check-in dates for alternatives
 
       if (!alternative.isEmpty) {
-     
         const latestReservedAlternatives = await building.getProperties({
           attributes: ["id", "amenities", "property_type"],
           raw: true,
@@ -213,17 +219,17 @@ exports.getSearchResultsForDates = (req, res) => {
             );
 
             if (sameProperty) {
-              console.log("same property" ,typeof date.start)
+              console.log("same property", typeof date.start);
 
               var Difference_In_Days =
-                (Date.parse(sameProperty.reservations.checkOut)-
+                (Date.parse(sameProperty.reservations.checkOut) -
                   Date.parse(property.reservations.checkIn)) /
                 (1000 * 3600 * 24);
               var los =
                 (Date.parse(date.start) - Date.parse(date.end)) /
                 (1000 * 3600 * 24);
-                console.log("in days\n",Difference_In_Days)
-                console.log("los\n",los)
+              console.log("in days\n", Difference_In_Days);
+              console.log("los\n", los);
 
               if (Difference_In_Days > los) {
                 //alter available check in date
@@ -239,7 +245,7 @@ exports.getSearchResultsForDates = (req, res) => {
               });
             }
           }
-        } else{
+        } else {
           alternative = alternative.map((p) => {
             return {
               id: p.id,
@@ -251,7 +257,9 @@ exports.getSearchResultsForDates = (req, res) => {
         alternative = alternative.map((p) => {
           return {
             id: p.id,
-            availableStarting: p.reservations?p.reservations.checkOut:p.availableStarting,
+            availableStarting: p.reservations
+              ? p.reservations.checkOut
+              : p.availableStarting,
           };
         });
       }
