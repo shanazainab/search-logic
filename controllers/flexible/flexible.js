@@ -111,6 +111,8 @@ exports.getSearchResultsForFlexible = (req, res) => {
       const match = [];
       let alternative = [];
       const other = [];
+      const conflictAlternatives = [];
+
       ///get properties with no reservations at all
       const noReservationProperties = properties.filter(
         (p) => p.reservations.check_in === null
@@ -130,14 +132,19 @@ exports.getSearchResultsForFlexible = (req, res) => {
             new Date(Date.UTC(new Date().getUTCFullYear(), month, 1, 0, 0, 0))
           );
           const availProperty = JSON.parse(JSON.stringify(property));
-          //todo:if weekend, add weekend
           if (flexible.type === "weekend") {
             let displacement;
             if (city === "Dubai") displacement = 4;
             else displacement = 5;
             var weekend = new Date(
               startDay.setDate(
-                startDay.getDate() + (displacement - (startDay.getDay() === 5? -2: startDay.getDay() ===6 ? -1:startDay.getDay()))
+                startDay.getDate() +
+                  (displacement -
+                    (startDay.getDay() === 5
+                      ? -2
+                      : startDay.getDay() === 6
+                      ? -1
+                      : startDay.getDay()))
               )
             );
             availProperty.reservations.check_in = weekend;
@@ -174,26 +181,14 @@ exports.getSearchResultsForFlexible = (req, res) => {
           );
 
           if (
-            !reservedProperties.find(
-              (p) =>
-                (flexiCheckInDate.getTime() >=
-                  Date.parse(p.reservations.check_in) &&
-                  flexiCheckOutDate.getTime() <=
-                    Date.parse(p.reservations.check_out)) ||
-                (flexiCheckInDate.getTime() >=
-                  Date.parse(p.reservations.check_in) &&
-                  flexiCheckInDate.getTime() <=
-                    Date.parse(p.reservations.check_out)) ||
-                (flexiCheckOutDate.getTime() >=
-                  Date.parse(p.reservations.check_in) &&
-                  flexiCheckOutDate.getTime() <=
-                    Date.parse(p.reservations.check_out)) ||
-                (flexiCheckInDate.getTime() <=
-                  Date.parse(p.reservations.check_in) &&
-                  flexiCheckOutDate.getTime() >=
-                    Date.parse(p.reservations.check_out))
+            !reservedProperties.find((p) =>
+              findConflicts(
+                flexiCheckInDate.getTime(),
+                flexiCheckOutDate.getTime(),
+                Date.parse(p.reservations.check_in),
+                Date.parse(p.reservations.check_out)
+              )
             )
-            //extra conditions to add
           ) {
             const availProperty = JSON.parse(
               JSON.stringify(reservedProperties[0])
@@ -204,6 +199,26 @@ exports.getSearchResultsForFlexible = (req, res) => {
             break;
           }
         }
+
+        ///todo alternative
+        var possibleCheckInDate = reservedProperties[0].reservations.check_out;
+        for (var i = 1; i < reservedProperties.length; ++i) {
+          var Difference_In_Days =
+            (Date.parse(possibleCheckInDate) -
+              Date.parse(reservedProperties[i].reservations.checkIn)) /
+            (1000 * 3600 * 24);
+          var los = noOfNights;
+
+          if (Difference_In_Days > los) {
+            possibleCheckInDate = reservedProperties[i].reservations.check_out;
+          }
+        }
+        conflictAlternatives.push({
+          id: reservedProperties[0].id,
+          property_type: reservedProperties[0].property_type,
+          amenities: reservedProperties[0].amenities,
+          availableStarting: possibleCheckInDate,
+        });
       });
 
       if (availableProperties) {
@@ -216,23 +231,16 @@ exports.getSearchResultsForFlexible = (req, res) => {
           });
           match.push(...ids);
         }
+
         /// match property with apartment type
         if (apartmentType) {
           for (const property of availableProperties) {
             if (property.property_type === apartmentType)
-              match.push({
-                id: property.id,
-                availableStarting: property.reservations.check_in,
-              });
-          }
-          if (match.isEmpty || match.length < 5) {
-            for (const property of availableProperties) {
-              if (property.property_type !== apartmentType)
-                other.push({
+              if (match.findIndex((x) => x.id == property.id) === -1)
+                match.push({
                   id: property.id,
                   availableStarting: property.reservations.check_in,
                 });
-            }
           }
         }
 
@@ -240,20 +248,38 @@ exports.getSearchResultsForFlexible = (req, res) => {
         if (amenitiesFilter) {
           for (const property of availableProperties) {
             if (findCommonAmenities(property.amenities, amenitiesFilter))
-              match.push({
-                id: property.id,
-                availableStarting: property.reservations.check_in,
-              });
-          }
-          if (match.isEmpty || match.length < 5) {
-            for (const property of availableProperties) {
-              if (!findCommonAmenities(property.amenities, amenitiesFilter))
-                other.push({
+              if (match.findIndex((x) => x.id == property.id) === -1)
+                match.push({
                   id: property.id,
                   availableStarting: property.reservations.check_in,
                 });
-            }
           }
+        }
+      }
+      if (match.isEmpty || match.length < 5) {
+        for (const property of availableProperties) {
+          if (
+            !findCommonAmenities(property.amenities, amenitiesFilter) ||
+            property.property_type !== apartmentType
+          )
+            if (other.findIndex((x) => x.id == property.id) === -1)
+              other.push({
+                id: property.id,
+                availableStarting: property.reservations.check_in,
+              });
+        }
+        //alternative
+
+        for (const alters of conflictAlternatives) {
+          if (
+            match.findIndex((x) => x.id == alters.id) === 0 &&
+            (findCommonAmenities(alters.amenities, amenitiesFilter) ||
+              alters.property_type === apartmentType)
+          )
+            alternative.push({
+              id: alters.id,
+              availableStarting:alters.availableStarting
+            });
         }
       }
 
@@ -265,4 +291,25 @@ exports.getSearchResultsForFlexible = (req, res) => {
         },
       });
     });
+};
+
+const findConflicts = (
+  flexibleCheckInDate,
+  flexibleCheckOutDate,
+  checkInDate,
+  checkOutDate
+) => {
+  return (
+    (checkInDate >= flexibleCheckInDate &&
+      checkOutDate <= flexibleCheckOutDate) ||
+    (checkInDate <= flexibleCheckInDate &&
+      checkOutDate >= flexibleCheckOutDate) ||
+    (checkInDate >= flexibleCheckInDate &&
+      checkInDate <= flexibleCheckOutDate &&
+      checkOutDate >= flexibleCheckOutDate) ||
+    (checkOutDate >= flexibleCheckInDate &&
+      checkOutDate <= flexibleCheckOutDate &&
+      checkOutDate != flexibleCheckInDate &&
+      checkInDate <= flexibleCheckInDate)
+  );
 };

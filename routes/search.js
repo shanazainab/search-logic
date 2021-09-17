@@ -30,7 +30,7 @@ router.post(
     amenities: {
       custom: {
         options: (value) => {
-          if (value.length > 0) {
+          if (value && value.length > 0) {
             let allFounded = value.every((ai) => ['WiFi', 'Pool', 'Garden', 'Tennis table', 'Parking'].includes(ai));
             if (!allFounded) throw new Error("Entered filters not available.");
           }

@@ -50,13 +50,26 @@ exports.getSearchResultsForDates = (req, res) => {
                   },
                 },
                 {
-                  checkIn: {
-                    [Op.between]: [date.start, date.end],
+                  [Op.and]: {
+                    checkIn: {
+                      [Op.between]: [date.start, date.end],
+                    },
+                    checkOut: {
+                      [Op.gte]: date.end,
+                    },
                   },
                 },
                 {
-                  checkOut: {
-                    [Op.gt]: date.start,
+                  [Op.and]: {
+                    checkIn: {
+                      [Op.lte]: date.start,
+                    },
+                    checkOut: {
+                      [Op.and]: {
+                        [Op.between]: [date.start, date.end],
+                        [Op.notIn]: [date.start],                      
+                      },
+                    },
                   },
                 },
               ],
@@ -82,7 +95,7 @@ exports.getSearchResultsForDates = (req, res) => {
         const conflictReservationProperties = properties.filter(
           (p) => p.reservations.checkIn !== null
         );
-        
+
         console.log("conflict\n", conflictReservationProperties);
 
         const reservedProperyIDs = conflictReservationProperties.map(
@@ -105,9 +118,12 @@ exports.getSearchResultsForDates = (req, res) => {
         availableProperties.push(...availableReservationProperties);
 
         if (availableProperties) {
-          if (!apartmentType && !amenitiesFilter) {
+          if (
+            !apartmentType &&
+            (!amenitiesFilter || !amenitiesFilter.length > 0)
+          ) {
             const ids = availableProperties.map((e) => e.id);
-            match.push(...ids);
+            match.push(...new Set(ids));
           } else {
             /// match property with apartment type and property type
             for (const property of availableProperties) {
@@ -121,18 +137,13 @@ exports.getSearchResultsForDates = (req, res) => {
                 }
               } else if (apartmentType) {
                 if (property.property_type === apartmentType) matched = true;
-              } else if (amenitiesFilter) {
-                console.log("go tot" , property.amenities,amenitiesFilter)
+              } else if (amenitiesFilter && amenitiesFilter.length > 0) {
                 if (findCommonAmenities(property.amenities, amenitiesFilter)) {
-
                   matched = true;
-                  console.log("go tot" , matched)
-
                 }
               }
 
               if (matched) {
-                console.log("go tot" , matched)
                 if (match.findIndex((x) => x == property.id) === -1)
                   match.push(property.id);
               }
@@ -146,7 +157,11 @@ exports.getSearchResultsForDates = (req, res) => {
                       availableStarting: date.start,
                     });
 
-                if (amenitiesFilter && !findCommonAmenities(property.amenities, amenitiesFilter))
+                if (
+                  amenitiesFilter &&
+                  amenitiesFilter.length > 0 &&
+                  !findCommonAmenities(property.amenities, amenitiesFilter)
+                )
                   if (other.findIndex((x) => x.id == property.id) === -1)
                     other.push({
                       id: property.id,
@@ -173,7 +188,7 @@ exports.getSearchResultsForDates = (req, res) => {
           }
 
           ///match proprty with amenities
-          if (amenitiesFilter) {
+          if (amenitiesFilter && amenitiesFilter.length > 0) {
             for (const property of conflictReservationProperties) {
               if (findCommonAmenities(property.amenities, amenitiesFilter)) {
                 if (alternative.findIndex((x) => x.id == property.id) === -1)
