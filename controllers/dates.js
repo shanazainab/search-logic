@@ -378,5 +378,9 @@ exports.getSearchResultsForDates = (req, res) => {
           other: other,
         },
       });
+    }).catch(e => {
+      res.status(400).json({
+        error: e,
+      });
     });
 };

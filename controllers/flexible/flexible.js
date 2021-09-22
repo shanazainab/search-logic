@@ -79,6 +79,7 @@ exports.getSearchResultsForFlexible = (req, res) => {
   Building.findAll({
     attributes: ["id", "city"],
     where: {
+      
       city: city,
     },
   })
@@ -381,6 +382,10 @@ exports.getSearchResultsForFlexible = (req, res) => {
           alternative: alternative,
           other: other,
         },
+      });
+    }).catch(e => {
+      res.status(400).json({
+        error: e,
       });
     });
 };
